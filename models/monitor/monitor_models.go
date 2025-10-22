@@ -1,6 +1,6 @@
-package tracker
+package monitor
 
-type TaskTrackerID struct {
+type MonitorID struct {
 	WorkflowID string `json:"workflow_id" bson:"workflow_id"`
 	TaskName   string `json:"task_name" bson:"task_name"`
 }
@@ -14,8 +14,8 @@ type TaskEndState struct {
 	Duration int                    `json:"duration" bson:"duration"`
 }
 
-type TaskTracker struct {
-	ID        TaskTrackerID          `json:"_id" bson:"_id"`
+type TaskMonitor struct {
+	ID        MonitorID              `json:"_id" bson:"_id"`
 	Version   int                    `json:"version" bson:"version"`
 	CreatedAt string                 `json:"created_at" bson:"created_at"`
 	Input     map[string]interface{} `json:"input" bson:"input"`
@@ -23,6 +23,6 @@ type TaskTracker struct {
 }
 
 // IsEndedSuccessfully checks if the task ended with a "COMPLETED" state.
-func (t *TaskTracker) IsEndedSuccessfully() bool {
+func (t *TaskMonitor) IsEndedSuccessfully() bool {
 	return t.Ending != nil && t.Ending.EndState == "COMPLETED"
 }

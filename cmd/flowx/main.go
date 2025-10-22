@@ -16,7 +16,6 @@ import (
 	health "flowx/services/health"
 	processor "flowx/services/processor"
 	queue "flowx/services/queue"
-	square "flowx/services/square"
 	workflow "flowx/services/workflow"
 	slack "flowx/utils/slack"
 
@@ -45,22 +44,21 @@ func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) 
 
 	// Init repos, services && handlers
 	workflowRepo := mongodb.NewWorkflowRepository(mongoClient)
-	trackerRepo := mongodb.NewTrackerRepository(mongoClient)
+	monitorRepo := mongodb.NewMonitorRepository(mongoClient)
 
-	workflowSVC := workflow.NewWorkflowService(logger)
-	squareWorkflow := workflowSVC.GetSquareWorkflow()
-	squareProcessor := processor.NewProcessor(logger, trackerRepo, squareWorkflow)
-	queueSvc := queue.NewQueueService(logger, k.Queue, workflowRepo, squareProcessor, slackAlerter)
+	healthSvc := health.NewService(logger, mongoClient)
+	workflowSvc := workflow.NewWorkflowService(logger)
+	basicWorkflow := workflowSvc.GetBasicWorkflow()
+	seqProcessor := processor.NewProcessor(logger, monitorRepo, basicWorkflow)
+	queueSvc := queue.NewQueueService(logger, k.Queue, workflowRepo, seqProcessor, slackAlerter)
+
 	err = queueSvc.Start(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	squareSVC := square.NewSquareService(logger, workflowRepo, queueSvc)
-	squareHandler := handlers.NewSquareHandler(squareSVC)
-
-	healthSvc := health.NewService(logger, mongoClient)
-	server := shttp.NewServer(k.Prefix, logger, healthSvc, squareHandler)
+	queueHandler := handlers.NewQueueHandler(queueSvc)
+	server := shttp.NewServer(k.Prefix, logger, healthSvc, queueHandler)
 	return server, nil
 
 }

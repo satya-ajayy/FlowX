@@ -3,7 +3,6 @@ package http
 import (
 	// Go Internal Packages
 	"context"
-	"github.com/go-chi/chi/v5"
 	"net/http"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	health "flowx/services/health"
 
 	// External Packages
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 )
@@ -24,20 +24,20 @@ type Server struct {
 	prefix string
 	logger *zap.Logger
 	health *health.HealthCheckService
-	square *handlers.SquareHandler
+	queue  *handlers.QueueHandler
 }
 
 func NewServer(
 	prefix string,
 	logger *zap.Logger,
-	healthCheckService *health.HealthCheckService,
-	square *handlers.SquareHandler,
+	health *health.HealthCheckService,
+	queue *handlers.QueueHandler,
 ) *Server {
 	return &Server{
 		prefix: prefix,
 		logger: logger,
-		health: healthCheckService,
-		square: square,
+		health: health,
+		queue:  queue,
 	}
 }
 
@@ -51,7 +51,7 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 	r.Route(s.prefix, func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
 			r.Get("/health", s.HealthCheckHandler)
-			r.Post("/square/init", s.ToHTTPHandlerFunc(s.square.InitWorkflow))
+			r.Post("/workflow/init", s.ToHTTPHandlerFunc(s.queue.InitWorkflow))
 		})
 	})
 

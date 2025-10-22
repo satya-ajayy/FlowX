@@ -1,8 +1,12 @@
 package workflow
 
 import (
+	// Go Internal Packages
+	"context"
+
 	// Local Packages
 	models "flowx/models/workflow"
+	helpers "flowx/utils/helpers"
 
 	// External Packages
 	"go.uber.org/zap"
@@ -16,30 +20,44 @@ func NewWorkflowService(logger *zap.Logger) *WorkflowService {
 	return &WorkflowService{logger: logger}
 }
 
-// GetSquareWorkflow return the sequence of tasks required to Square Numbers
-func (s *WorkflowService) GetSquareWorkflow() models.Workflow {
+// GetBasicWorkflow return the sequence of tasks required to Square Numbers
+func (s *WorkflowService) GetBasicWorkflow() models.Workflow {
 	// Tasks always need to be executed in a synchronous way for this workflow
 	return models.Workflow{
-		Name: "Square-Workflow",
+		Name: "Basic-Workflow",
 		Tasks: []models.Task{
 			{
-				Name:        "UpdatePublishAndMutationIDs",
-				Description: "Update the publishID and mutationID",
+				Name:        "Step 1",
+				Description: "Step 1 in Basic Workflow",
 				Cleanup:     nil,
-				Execute:     s.SquareTask,
+				Execute:     s.BasicTask,
 			},
 			{
-				Name:        "UpdateConfigsInCache",
-				Description: "Config Updates in the Redis Cache",
+				Name:        "Step 2",
+				Description: "Step 2 in Basic Workflow",
 				Cleanup:     nil,
-				Execute:     s.SquareTask,
+				Execute:     s.BasicTask,
 			},
 			{
-				Name:        "AppendNewPublishIdInRedis",
-				Description: "Creates new publishID in Redis",
+				Name:        "Step 3",
+				Description: "Step 3 in Basic Workflow",
 				Cleanup:     nil,
-				Execute:     s.SquareTask,
+				Execute:     s.BasicTask,
 			},
 		},
 	}
+}
+
+func (s *WorkflowService) BasicTask(_ context.Context, input map[string]interface{}) (map[string]interface{}, error) {
+	// Extract the required fields from the input
+	name, _ := input["name"].(string)
+	jumbledName := helpers.JumbleName(name)
+
+	s.logger.Info("Successfully Jumbled Name", zap.String("name", jumbledName))
+
+	output := map[string]interface{}{
+		"name": jumbledName,
+	}
+
+	return output, nil
 }

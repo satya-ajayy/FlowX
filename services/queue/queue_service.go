@@ -9,13 +9,16 @@ import (
 	// Local Packages
 	config "flowx/config"
 	models "flowx/models/workflow"
+	helpers "flowx/utils/helpers"
 	slack "flowx/utils/slack"
 
 	// External Packages
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type WorkflowRepository interface {
+	CreateWorkflow(ctx context.Context, workflow models.WorkflowDBModel) error
 	GetInCompleted(ctx context.Context) ([]models.WorkflowDBModel, error)
 	MarkAsComplete(ctx context.Context, workflowID string) error
 }
@@ -60,12 +63,37 @@ func (s *QueueService) Start(ctx context.Context) error {
 	}
 
 	for _, wf := range workflows {
-		s.Enqueue(ctx, wf)
+		s.enqueue(ctx, wf)
 	}
 	return nil
 }
 
-func (s *QueueService) Enqueue(_ context.Context, workflow models.WorkflowDBModel) {
+func (s *QueueService) InitWorkflow(ctx context.Context, input map[string]interface{}) (string, error) {
+	newWorkflowID := uuid.New().String()
+	currentDateTime := helpers.GetCurrentDateTime()
+	zeroDateTime := helpers.GetNotEndedTime()
+
+	// WorkflowDBModel
+	workflow := models.WorkflowDBModel{
+		ID:             newWorkflowID,
+		CreatedAt:      currentDateTime,
+		Input:          input,
+		IsCompleted:    false,
+		CompletedAt:    zeroDateTime,
+		LastTaskStatus: false,
+	}
+
+	err := s.workflowRepo.CreateWorkflow(ctx, workflow)
+	if err != nil {
+		return "", err
+	}
+
+	// Enqueue the workflow to the queue
+	s.enqueue(ctx, workflow)
+	return workflow.ID, nil
+}
+
+func (s *QueueService) enqueue(_ context.Context, workflow models.WorkflowDBModel) {
 	s.queue <- workflow
 	s.logger.Info("Workflow Added To Queue Successfully", zap.String("workflowId", workflow.ID))
 }
