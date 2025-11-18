@@ -28,8 +28,8 @@ type Server struct {
 }
 
 func NewServer(
-	prefix string,
 	logger *zap.Logger,
+	prefix string,
 	health *health.HealthCheckService,
 	queue *handlers.QueueHandler,
 ) *Server {

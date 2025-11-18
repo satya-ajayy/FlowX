@@ -7,7 +7,7 @@ import (
 	"time"
 
 	// Local Packages
-	tmodels "flowx/models/monitor"
+	tmodels "flowx/models/tasklog"
 	wmodels "flowx/models/workflow"
 	helpers "flowx/utils/helpers"
 
@@ -15,22 +15,22 @@ import (
 	"go.uber.org/zap"
 )
 
-type MonitorRepository interface {
-	GetLastRecordedTask(ctx context.Context, workflowID string) (*tmodels.TaskMonitor, error)
+type TaskLogRepo interface {
+	GetLastRecordedTask(ctx context.Context, workflowID string) (*tmodels.TaskLog, error)
 	RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]interface{}) error
 	RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]interface{}) error
 }
 
 type ProcessorService struct {
 	logger   *zap.Logger
-	monitor  MonitorRepository
+	tasklog  TaskLogRepo
 	workflow wmodels.Workflow
 }
 
-func NewProcessor(logger *zap.Logger, monitor MonitorRepository, workflow wmodels.Workflow) *ProcessorService {
+func NewProcessor(logger *zap.Logger, tasklog TaskLogRepo, workflow wmodels.Workflow) *ProcessorService {
 	return &ProcessorService{
 		logger:   logger,
-		monitor:  monitor,
+		tasklog:  tasklog,
 		workflow: workflow,
 	}
 }
@@ -38,7 +38,7 @@ func NewProcessor(logger *zap.Logger, monitor MonitorRepository, workflow wmodel
 // StartWorkflow checks the last executed task and starts the workflow from there
 // if none found it start as fresh workflow and run all the tasks
 func (s *ProcessorService) StartWorkflow(ctx context.Context, workerID int, workflow wmodels.WorkflowDBModel) error {
-	lastExecutedTask, err := s.monitor.GetLastRecordedTask(ctx, workflow.ID)
+	lastExecutedTask, err := s.tasklog.GetLastRecordedTask(ctx, workflow.ID)
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (s *ProcessorService) ProcessWorkflow(ctx context.Context, workflowID strin
 	initialInput map[string]interface{}, tasks []wmodels.Task) error {
 	input := initialInput
 	for _, task := range tasks {
-		mongoErr := s.monitor.RecordTaskStart(ctx, workflowID, task.Name, input)
+		mongoErr := s.tasklog.RecordTaskStart(ctx, workflowID, task.Name, input)
 		if mongoErr != nil {
 			return mongoErr
 		}
@@ -92,9 +92,9 @@ func (s *ProcessorService) ProcessTaskWithRetry(ctx context.Context, workflowID 
 			s.logger.Info(fmt.Sprintf("Task [%s] Executed Successfully", task.Name), zap.Int("workerId", workerID),
 				zap.Duration("duration", duration), zap.Int("attempt", attempt))
 
-			err := s.monitor.RecordTaskEnd(ctx, workflowID, task.Name, "COMPLETED", "", sec, output)
+			err := s.tasklog.RecordTaskEnd(ctx, workflowID, task.Name, "COMPLETED", "", sec, output)
 			if err != nil {
-				return nil, fmt.Errorf("Task(S) Monitoring Failed: %w", err)
+				return nil, fmt.Errorf("Task(S) Logging Failed: %w", err)
 			}
 			return output, nil
 		}
@@ -108,9 +108,9 @@ func (s *ProcessorService) ProcessTaskWithRetry(ctx context.Context, workflowID 
 
 	s.logger.Error(fmt.Sprintf("Retry Attempts Reached, Task [%s] Failed", task.Name),
 		zap.Int("workerId", workerID), zap.Error(lastError))
-	err := s.monitor.RecordTaskEnd(ctx, workflowID, task.Name, "FAILED", lastError.Error(), -1, nil)
+	err := s.tasklog.RecordTaskEnd(ctx, workflowID, task.Name, "FAILED", lastError.Error(), -1, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Task(F) Monitoring Failed: %w", err)
+		return nil, fmt.Errorf("Task(F) Logging Failed: %w", err)
 	}
 	return nil, lastError
 }
@@ -138,7 +138,7 @@ func (s *ProcessorService) ProcessTask(ctx context.Context, task wmodels.Task, i
 	return input, helpers.SecondsSince(startTime), nil
 }
 
-func (s *ProcessorService) FindPendingTasks(lastExecutedTask *tmodels.TaskMonitor) (wmodels.TaskList, map[string]interface{}) {
+func (s *ProcessorService) FindPendingTasks(lastExecutedTask *tmodels.TaskLog) (wmodels.TaskList, map[string]interface{}) {
 	// Check weather the last task is ended successfully or not
 	isLastTaskCompleted := lastExecutedTask.IsEndedSuccessfully()
 	lastTaskName := lastExecutedTask.ID.TaskName

@@ -49,25 +49,6 @@ func NewQueueService(logger *zap.Logger, conf config.Queue, workflowRepo Workflo
 	}
 }
 
-func (s *QueueService) Start(ctx context.Context) error {
-	// Start workers
-	for i := 0; i < s.workers; i++ {
-		s.wg.Add(1)
-		go s.worker(ctx, i)
-	}
-
-	// Load incomplete workflows
-	workflows, err := s.workflowRepo.GetInCompleted(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load incomplete workflows: %v", err)
-	}
-
-	for _, wf := range workflows {
-		s.enqueue(ctx, wf)
-	}
-	return nil
-}
-
 func (s *QueueService) InitWorkflow(ctx context.Context, input map[string]interface{}) (string, error) {
 	newWorkflowID := uuid.New().String()
 	currentDateTime := helpers.GetCurrentDateTime()
@@ -93,6 +74,26 @@ func (s *QueueService) InitWorkflow(ctx context.Context, input map[string]interf
 	return workflow.ID, nil
 }
 
+func (s *QueueService) Start(ctx context.Context) error {
+	// Start workers
+	for i := 0; i < s.workers; i++ {
+		s.wg.Add(1)
+		go s.worker(ctx, i)
+		helpers.SleepOneSecond()
+	}
+
+	// Load incomplete workflows
+	workflows, err := s.workflowRepo.GetInCompleted(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load incomplete workflows: %v", err)
+	}
+
+	for _, wf := range workflows {
+		s.enqueue(ctx, wf)
+	}
+	return nil
+}
+
 func (s *QueueService) enqueue(_ context.Context, workflow models.WorkflowDBModel) {
 	s.queue <- workflow
 	s.logger.Info("Workflow Added To Queue Successfully", zap.String("workflowId", workflow.ID))
@@ -100,7 +101,7 @@ func (s *QueueService) enqueue(_ context.Context, workflow models.WorkflowDBMode
 
 func (s *QueueService) worker(ctx context.Context, workerID int) {
 	defer s.wg.Done()
-	s.logger.Info("Worker started", zap.Int("workerId", workerID))
+	s.logger.Info("Worker started [Polling Workflows]", zap.Int("workerId", workerID))
 
 	for {
 		select {

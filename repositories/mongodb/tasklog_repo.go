@@ -7,7 +7,7 @@ import (
 
 	// Local Packages
 	errors "flowx/errors"
-	models "flowx/models/monitor"
+	models "flowx/models/tasklog"
 	helpers "flowx/utils/helpers"
 
 	// External Packages
@@ -16,30 +16,30 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type MonitorRepository struct {
+type TaskLogRepository struct {
 	client     *mongo.Client
 	database   string
 	collection string
 }
 
-func NewMonitorRepository(client *mongo.Client) *MonitorRepository {
-	return &MonitorRepository{
+func NewTaskLogRepository(client *mongo.Client) *TaskLogRepository {
+	return &TaskLogRepository{
 		client:     client,
 		database:   "flowx",
-		collection: "monitor",
+		collection: "tasklogs",
 	}
 }
 
-func (r *MonitorRepository) RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]interface{}) error {
+func (r *TaskLogRepository) RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]interface{}) error {
 	collection := r.client.Database(r.database).Collection(r.collection)
 
-	taskID := models.MonitorID{
+	taskID := models.TaskLogID{
 		WorkflowID: workflowID,
 		TaskName:   taskName,
 	}
 
 	curTime := helpers.GetCurrentDateTime()
-	taskLog := models.TaskMonitor{
+	taskLog := models.TaskLog{
 		Version:   1,
 		ID:        taskID,
 		CreatedAt: curTime,
@@ -65,10 +65,10 @@ func (r *MonitorRepository) RecordTaskStart(ctx context.Context, workflowID, tas
 	return nil
 }
 
-func (r *MonitorRepository) RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]interface{}) error {
+func (r *TaskLogRepository) RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]interface{}) error {
 	collection := r.client.Database(r.database).Collection(r.collection)
 
-	taskID := models.MonitorID{
+	taskID := models.TaskLogID{
 		WorkflowID: workflowID,
 		TaskName:   taskName,
 	}
@@ -90,19 +90,18 @@ func (r *MonitorRepository) RecordTaskEnd(ctx context.Context, workflowID, taskN
 	if err != nil {
 		return err
 	}
-
 	if res.ModifiedCount == 0 {
 		return fmt.Errorf("document not modified")
 	}
 	return nil
 }
 
-func (r *MonitorRepository) GetLastRecordedTask(ctx context.Context, workflowID string) (*models.TaskMonitor, error) {
+func (r *TaskLogRepository) GetLastRecordedTask(ctx context.Context, workflowID string) (*models.TaskLog, error) {
 	collection := r.client.Database(r.database).Collection(r.collection)
 	filter := bson.M{"_id.workflow_id": workflowID}
 	opts := options.FindOne().SetSort(bson.M{"created_at": -1})
 
-	var task models.TaskMonitor
+	var task models.TaskLog
 	err := collection.FindOne(ctx, filter, opts).Decode(&task)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil

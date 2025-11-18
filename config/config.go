@@ -3,6 +3,7 @@ package config
 import (
 	// Local Packages
 	errors "flowx/errors"
+	helpers "flowx/utils/helpers"
 )
 
 var DefaultConfig = []byte(`
@@ -63,33 +64,21 @@ type Slack struct {
 }
 
 // Validate validates the configuration
+// Validate validates the configuration
 func (c *Config) Validate() error {
 	ve := errors.ValidationErrs()
 
-	if c.Application == "" {
-		ve.Add("application", "cannot be empty")
-	}
-	if c.Listen == "" {
-		ve.Add("listen", "cannot be empty")
-	}
-	if c.Logger.Level == "" {
-		ve.Add("logger.level", "cannot be empty")
-	}
-	if c.Prefix == "" {
-		ve.Add("prefix", "cannot be empty")
-	}
-	if c.Mongo.URI == "" {
-		ve.Add("mongo.uri", "cannot be empty")
-	}
-	if c.Slack.WebhookURL == "" {
-		ve.Add("slack.webhook_url", "cannot be empty")
-	}
-	if c.Queue.Size == 0 {
-		ve.Add("queue.size", "cannot be empty")
-	}
-	if c.Queue.Workers == 0 {
-		ve.Add("queue.workers", "cannot be empty")
-	}
+	// Required String Fields
+	helpers.ValidateRequiredString(ve, "application", c.Application)
+	helpers.ValidateRequiredString(ve, "listen", c.Listen)
+	helpers.ValidateRequiredString(ve, "logger.level", c.Logger.Level)
+	helpers.ValidateRequiredString(ve, "prefix", c.Prefix)
+	helpers.ValidateRequiredString(ve, "mongo.uri", c.Mongo.URI)
+	helpers.ValidateRequiredString(ve, "slack.webhook_url", c.Slack.WebhookURL)
+
+	// Required Numeric Fields
+	helpers.ValidateRequiredNumeric(ve, "queue.size", c.Queue.Size)
+	helpers.ValidateRequiredNumeric(ve, "queue.workers", c.Queue.Workers)
 
 	return ve.Err()
 }

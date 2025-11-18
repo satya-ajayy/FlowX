@@ -15,3 +15,7 @@ func GetNotEndedTime() string {
 func SecondsSince(start time.Time) int {
 	return int(time.Since(start).Seconds())
 }
+
+func SleepOneSecond() {
+	time.Sleep(1 * time.Second)
+}

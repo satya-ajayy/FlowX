@@ -10,7 +10,7 @@ import (
 
 	// Local Packages
 	config "flowx/config"
-	shttp "flowx/http"
+	http "flowx/http"
 	handlers "flowx/http/handlers"
 	mongodb "flowx/repositories/mongodb"
 	health "flowx/services/health"
@@ -32,7 +32,7 @@ import (
 
 // InitializeServer sets up an HTTP server with defined handlers. Repositories are initialized,
 // create the services, and subsequently construct handlers for the services
-func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) (*shttp.Server, error) {
+func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) (*http.Server, error) {
 	// Connect to mongodb
 	mongoClient, err := mongodb.Connect(ctx, k.Mongo.URI)
 	if err != nil {
@@ -44,23 +44,23 @@ func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) 
 
 	// Init repos, services && handlers
 	workflowRepo := mongodb.NewWorkflowRepository(mongoClient)
-	monitorRepo := mongodb.NewMonitorRepository(mongoClient)
+	tasklogRepo := mongodb.NewTaskLogRepository(mongoClient)
 
-	healthSvc := health.NewService(logger, mongoClient)
 	workflowSvc := workflow.NewWorkflowService(logger)
 	basicWorkflow := workflowSvc.GetBasicWorkflow()
-	seqProcessor := processor.NewProcessor(logger, monitorRepo, basicWorkflow)
-	queueSvc := queue.NewQueueService(logger, k.Queue, workflowRepo, seqProcessor, slackAlerter)
 
-	err = queueSvc.Start(ctx)
+	seqProcessor := processor.NewProcessor(logger, tasklogRepo, basicWorkflow)
+	healthSVC := health.NewService(logger, mongoClient)
+	queueSVC := queue.NewQueueService(logger, k.Queue, workflowRepo, seqProcessor, slackAlerter)
+
+	err = queueSVC.Start(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	queueHandler := handlers.NewQueueHandler(queueSvc)
-	server := shttp.NewServer(k.Prefix, logger, healthSvc, queueHandler)
+	queueHandler := handlers.NewQueueHandler(queueSVC)
+	server := http.NewServer(logger, k.Prefix, healthSVC, queueHandler)
 	return server, nil
-
 }
 
 // LoadConfig loads the default configuration and overrides it with the config file
