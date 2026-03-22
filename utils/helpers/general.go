@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"regexp"
 
 	"github.com/gorilla/schema"
@@ -70,14 +69,4 @@ func UnmarshalInterface(res interface{}, mp map[string]interface{}, key string) 
 		}
 	}
 	return nil
-}
-
-func JumbleName(name string) string {
-	runes := []rune(name)
-
-	rand.Shuffle(len(runes), func(i, j int) {
-		runes[i], runes[j] = runes[j], runes[i]
-	})
-
-	return string(runes)
 }

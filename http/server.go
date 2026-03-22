@@ -11,7 +11,6 @@ import (
 	handlers "flowx/http/handlers"
 	middlewares "flowx/http/middlewares"
 	resp "flowx/http/response"
-	health "flowx/services/health"
 
 	// External Packages
 	"github.com/go-chi/chi/v5"
@@ -21,23 +20,23 @@ import (
 
 // Server struct follows the alphabet order
 type Server struct {
+	close  func()
 	prefix string
 	logger *zap.Logger
-	health *health.HealthCheckService
-	queue  *handlers.QueueHandler
+	health *handlers.HealthCheckHandler
 }
 
 func NewServer(
 	logger *zap.Logger,
 	prefix string,
-	health *health.HealthCheckService,
-	queue *handlers.QueueHandler,
+	health *handlers.HealthCheckHandler,
+	close func(),
 ) *Server {
 	return &Server{
-		prefix: prefix,
+		close:  close,
 		logger: logger,
+		prefix: prefix,
 		health: health,
-		queue:  queue,
 	}
 }
 
@@ -50,15 +49,14 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 
 	r.Route(s.prefix, func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
-			r.Get("/health", s.HealthCheckHandler)
-			r.Post("/workflow/init", s.ToHTTPHandlerFunc(s.queue.InitWorkflow))
+			r.Get("/health", s.ToHTTPHandlerFunc(s.health.HealthCheck))
 		})
 	})
 
 	errch := make(chan error)
 	server := &http.Server{Addr: addr, Handler: r}
 	go func() {
-		s.logger.Info("Starting server", zap.String("addr", addr))
+		s.logger.Info("Starting HTTP Server 🚀", zap.String("addr", addr))
 		errch <- server.ListenAndServe()
 	}()
 
@@ -68,7 +66,13 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		if s.close != nil {
+			s.close()
+		}
+		return nil
 	}
 }
 
@@ -95,13 +99,4 @@ func (s *Server) ToHTTPHandlerFunc(handler func(w http.ResponseWriter, r *http.R
 			w.WriteHeader(status)
 		}
 	}
-}
-
-// HealthCheckHandler returns the health status of the service
-func (s *Server) HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	if ok := s.health.Health(r.Context()); !ok {
-		resp.RespondMessage(w, http.StatusServiceUnavailable, "health check failed")
-		return
-	}
-	resp.RespondMessage(w, http.StatusOK, "!!! We are RunninGoo !!!")
 }

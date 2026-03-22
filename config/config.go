@@ -10,6 +10,7 @@ var DefaultConfig = []byte(`
 application: "flowx"
 
 logger:
+  encoding: "logfmt"
   level: "debug"
 
 listen: ":3625"
@@ -42,7 +43,8 @@ type Config struct {
 }
 
 type Logger struct {
-	Level string `koanf:"level"`
+	Encoding string `koanf:"encoding"`
+	Level    string `koanf:"level"`
 }
 
 type Mongo struct {
@@ -77,8 +79,8 @@ func (c *Config) Validate() error {
 	helpers.ValidateRequiredString(ve, "slack.webhook_url", c.Slack.WebhookURL)
 
 	// Required Numeric Fields
-	helpers.ValidateRequiredNumeric(ve, "queue.size", c.Queue.Size)
-	helpers.ValidateRequiredNumeric(ve, "queue.workers", c.Queue.Workers)
+	helpers.ValidateRequiredNumber(ve, "queue.size", c.Queue.Size)
+	helpers.ValidateRequiredNumber(ve, "queue.workers", c.Queue.Workers)
 
 	return ve.Err()
 }

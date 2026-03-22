@@ -17,8 +17,8 @@ import (
 
 type TaskLogRepo interface {
 	GetLastRecordedTask(ctx context.Context, workflowID string) (*tmodels.TaskLog, error)
-	RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]interface{}) error
-	RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]interface{}) error
+	RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]any) error
+	RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]any) error
 }
 
 type ProcessorService struct {
@@ -45,36 +45,33 @@ func (s *ProcessorService) StartWorkflow(ctx context.Context, workerID int, work
 
 	if lastExecutedTask == nil {
 		allTasks := s.workflow.GetAllTasks()
-
 		s.logger.Info("Processing New Workflow", zap.String("workflowId", workflow.ID),
 			zap.Int("workerId", workerID), zap.Strings("tasks", allTasks.GetNames()))
-
-		processErr := s.ProcessWorkflow(ctx, workflow.ID, workerID, workflow.Input, allTasks)
-		return processErr
+		err = s.ProcessWorkflow(ctx, workflow.ID, workerID, workflow.Input, allTasks)
+		return err
 	}
 
 	pendingTasks, input := s.FindPendingTasks(lastExecutedTask)
 	s.logger.Info("Processing Old Workflow", zap.String("workflowId", workflow.ID),
 		zap.Int("workerId", workerID), zap.Strings("tasks", pendingTasks.GetNames()))
-	processErr := s.ProcessWorkflow(ctx, workflow.ID, workerID, input, pendingTasks)
-	return processErr
+	err = s.ProcessWorkflow(ctx, workflow.ID, workerID, input, pendingTasks)
+	return err
 }
 
-func (s *ProcessorService) ProcessWorkflow(ctx context.Context, workflowID string, workerID int,
-	initialInput map[string]interface{}, tasks []wmodels.Task) error {
+func (s *ProcessorService) ProcessWorkflow(ctx context.Context, workflowID string, workerID int, initialInput map[string]any, tasks []wmodels.Task) error {
 	input := initialInput
 	for _, task := range tasks {
-		mongoErr := s.tasklog.RecordTaskStart(ctx, workflowID, task.Name, input)
-		if mongoErr != nil {
-			return mongoErr
+		err := s.tasklog.RecordTaskStart(ctx, workflowID, task.Name, input)
+		if err != nil {
+			return err
 		}
 
 		s.logger.Info(fmt.Sprintf("Processing Task [%s]", task.Name),
 			zap.String("workflowId", workflowID), zap.Int("workerId", workerID))
 
-		output, processErr := s.ProcessTaskWithRetry(ctx, workflowID, workerID, input, task)
-		if processErr != nil {
-			return processErr
+		output, err := s.ProcessTaskWithRetry(ctx, workflowID, workerID, input, task)
+		if err != nil {
+			return err
 		}
 
 		input = output
@@ -82,13 +79,13 @@ func (s *ProcessorService) ProcessWorkflow(ctx context.Context, workflowID strin
 	return nil
 }
 
-func (s *ProcessorService) ProcessTaskWithRetry(ctx context.Context, workflowID string, workerID int,
-	input map[string]interface{}, task wmodels.Task) (map[string]interface{}, error) {
+func (s *ProcessorService) ProcessTaskWithRetry(ctx context.Context, workflowID string, workerID int, input map[string]any, task wmodels.Task) (map[string]any, error) {
 	var lastError error
+
 	for attempt := 1; attempt <= 3; attempt++ {
-		output, sec, processErr := s.ProcessTask(ctx, task, input)
+		output, sec, err := s.ProcessTask(ctx, task, input)
 		duration := time.Duration(sec) * time.Second
-		if processErr == nil {
+		if err == nil {
 			s.logger.Info(fmt.Sprintf("Task [%s] Executed Successfully", task.Name), zap.Int("workerId", workerID),
 				zap.Duration("duration", duration), zap.Int("attempt", attempt))
 
@@ -100,10 +97,10 @@ func (s *ProcessorService) ProcessTaskWithRetry(ctx context.Context, workflowID 
 		}
 
 		s.logger.Warn(fmt.Sprintf("Task [%s] Execution Failed, Retrying", task.Name),
-			zap.Int("workerId", workerID), zap.Int("attempt", attempt), zap.Error(processErr))
+			zap.Int("workerId", workerID), zap.Int("attempt", attempt), zap.Error(err))
 
 		time.Sleep(1 * time.Minute)
-		lastError = processErr
+		lastError = err
 	}
 
 	s.logger.Error(fmt.Sprintf("Retry Attempts Reached, Task [%s] Failed", task.Name),

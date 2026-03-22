@@ -11,28 +11,22 @@ import (
 	helpers "flowx/utils/helpers"
 
 	// External Packages
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type TaskLogRepository struct {
-	client     *mongo.Client
-	database   string
-	collection string
+	collection *mongo.Collection
 }
 
 func NewTaskLogRepository(client *mongo.Client) *TaskLogRepository {
 	return &TaskLogRepository{
-		client:     client,
-		database:   "flowx",
-		collection: "tasklogs",
+		collection: client.Database("flowx").Collection("tasklogs"),
 	}
 }
 
-func (r *TaskLogRepository) RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]interface{}) error {
-	collection := r.client.Database(r.database).Collection(r.collection)
-
+func (r *TaskLogRepository) RecordTaskStart(ctx context.Context, workflowID, taskName string, input map[string]any) error {
 	taskID := models.TaskLogID{
 		WorkflowID: workflowID,
 		TaskName:   taskName,
@@ -49,9 +43,9 @@ func (r *TaskLogRepository) RecordTaskStart(ctx context.Context, workflowID, tas
 
 	filter := bson.M{"_id": taskID}
 	update := bson.M{"$set": taskLog}
-	opts := options.Update().SetUpsert(true)
+	opts := options.UpdateOne().SetUpsert(true)
 
-	res, err := collection.UpdateOne(ctx, filter, update, opts)
+	res, err := r.collection.UpdateOne(ctx, filter, update, opts)
 	if mongo.IsDuplicateKeyError(err) {
 		return errors.E(errors.Conflict, "duplicate entry")
 	}
@@ -65,9 +59,7 @@ func (r *TaskLogRepository) RecordTaskStart(ctx context.Context, workflowID, tas
 	return nil
 }
 
-func (r *TaskLogRepository) RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]interface{}) error {
-	collection := r.client.Database(r.database).Collection(r.collection)
-
+func (r *TaskLogRepository) RecordTaskEnd(ctx context.Context, workflowID, taskName, state, reason string, duration int, output map[string]any) error {
 	taskID := models.TaskLogID{
 		WorkflowID: workflowID,
 		TaskName:   taskName,
@@ -86,7 +78,8 @@ func (r *TaskLogRepository) RecordTaskEnd(ctx context.Context, workflowID, taskN
 		},
 	}
 
-	res, err := collection.UpdateOne(ctx, bson.M{"_id": taskID}, update)
+	filter := bson.M{"_id": taskID}
+	res, err := r.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return err
 	}
@@ -97,16 +90,15 @@ func (r *TaskLogRepository) RecordTaskEnd(ctx context.Context, workflowID, taskN
 }
 
 func (r *TaskLogRepository) GetLastRecordedTask(ctx context.Context, workflowID string) (*models.TaskLog, error) {
-	collection := r.client.Database(r.database).Collection(r.collection)
 	filter := bson.M{"_id.workflow_id": workflowID}
 	opts := options.FindOne().SetSort(bson.M{"created_at": -1})
 
 	var task models.TaskLog
-	err := collection.FindOne(ctx, filter, opts).Decode(&task)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, nil
-	}
+	err := r.collection.FindOne(ctx, filter, opts).Decode(&task)
 	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
 		return nil, err
 	}
 

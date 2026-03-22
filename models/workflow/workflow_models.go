@@ -8,8 +8,8 @@ import (
 type Task struct {
 	Name        string
 	Description string
-	Cleanup     func(ctx context.Context, input map[string]interface{}) error
-	Execute     func(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error)
+	Cleanup     func(ctx context.Context, input map[string]any) error
+	Execute     func(ctx context.Context, input map[string]any) (map[string]any, error)
 }
 
 type TaskList []Task
@@ -17,6 +17,15 @@ type TaskList []Task
 type Workflow struct {
 	Name  string   `json:"name" bson:"name"`
 	Tasks TaskList `json:"tasks" bson:"tasks"`
+}
+
+type WorkflowDBModel struct {
+	ID             string         `json:"_id" bson:"_id"`
+	CreatedAt      string         `json:"created_at" bson:"created_at"`
+	Input          map[string]any `json:"input" bson:"input"`
+	IsCompleted    bool           `json:"is_completed" bson:"is_completed"`
+	CompletedAt    string         `json:"completed_at" bson:"completed_at"`
+	LastTaskStatus bool           `json:"last_task_status" bson:"last_task_status"`
 }
 
 func (tasks TaskList) GetNames() []string {
@@ -27,11 +36,11 @@ func (tasks TaskList) GetNames() []string {
 	return names
 }
 
-func (w Workflow) GetAllTasks() TaskList {
+func (w *Workflow) GetAllTasks() TaskList {
 	return w.Tasks
 }
 
-func (w Workflow) GetPendingTasks(lastExecutedTask string, lastTaskStatus bool) []Task {
+func (w *Workflow) GetPendingTasks(lastExecutedTask string, lastTaskStatus bool) []Task {
 	var remaining []Task
 	found := false
 
@@ -50,13 +59,4 @@ func (w Workflow) GetPendingTasks(lastExecutedTask string, lastTaskStatus bool) 
 	}
 
 	return remaining
-}
-
-type WorkflowDBModel struct {
-	ID             string                 `json:"_id" bson:"_id"`
-	CreatedAt      string                 `json:"created_at" bson:"created_at"`
-	Input          map[string]interface{} `json:"input" bson:"input"`
-	IsCompleted    bool                   `json:"is_completed" bson:"is_completed"`
-	CompletedAt    string                 `json:"completed_at" bson:"completed_at"`
-	LastTaskStatus bool                   `json:"last_task_status" bson:"last_task_status"`
 }
