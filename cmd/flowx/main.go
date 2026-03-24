@@ -10,15 +10,14 @@ import (
 
 	// Local Packages
 	config "flowx/config"
-	"flowx/flow"
 	http "flowx/http"
 	handlers "flowx/http/handlers"
 	mongodb "flowx/repositories/mongodb"
+	executor "flowx/services/executor"
 	health "flowx/services/health"
-	"flowx/services/executor"
 	runsvc "flowx/services/run"
-	"flowx/utils/slack"
 	helpers "flowx/utils/helpers"
+	slack "flowx/utils/slack"
 
 	// External Packages
 	"github.com/alecthomas/kingpin/v2"
@@ -47,9 +46,9 @@ func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) 
 	stepRunRepo := mongodb.NewStepRunRepository(mongoClient)
 
 	// Services
-	healthSvc := health.NewService(logger, mongoClient)
-	exec := executor.NewExecutor(logger, stepRunRepo, flow.Dummy)
-	runSvc := runsvc.NewRunService(logger, k.Queue, runRepo, exec, slack)
+	healthSVC := health.NewService(logger, mongoClient)
+	executorSVC := executor.NewService(logger, k.Executor, stepRunRepo)
+	runSvc := runsvc.NewService(logger, k.Queue, runRepo, executorSVC, slack)
 
 	// Start the run service (spawns workers and re-enqueues incomplete runs)
 	if err := runSvc.Start(ctx); err != nil {
@@ -58,7 +57,7 @@ func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) 
 	}
 
 	// Handlers
-	healthHandler := handlers.NewHealthCheckHandler(healthSvc)
+	healthHandler := handlers.NewHealthCheckHandler(healthSVC)
 	runHandler := handlers.NewRunHandler(runSvc)
 
 	closeCallback := func() {

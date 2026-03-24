@@ -41,8 +41,8 @@ type RunService struct {
 	slack    slack.Sender
 }
 
-// NewRunService creates a RunService with the given queue configuration.
-func NewRunService(logger *zap.Logger, conf config.Queue, runRepo RunRepository, executor Executor, slack slack.Sender) *RunService {
+// NewService creates a RunService with the given queue configuration.
+func NewService(logger *zap.Logger, conf config.Queue, runRepo RunRepository, executor Executor, slack slack.Sender) *RunService {
 	queue := make(chan models.Run, conf.Size)
 	return &RunService{
 		logger:   logger,

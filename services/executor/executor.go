@@ -4,9 +4,12 @@ import (
 	// Go Internal Packages
 	"context"
 	"fmt"
+	"math"
+	"math/rand/v2"
 	"time"
 
 	// Local Packages
+	config "flowx/config"
 	flow "flowx/flow"
 	srmodels "flowx/models/steprun"
 	helpers "flowx/utils/helpers"
@@ -23,19 +26,24 @@ type StepRunRepo interface {
 }
 
 // Executor is responsible for running the steps of a flow sequentially.
-// It handles step-level persistence, retries, and resume-from-failure logic.
+// It handles step-level persistence, retries with exponential backoff + jitter,
+// and resume-from-failure logic.
 type Executor struct {
 	logger      *zap.Logger
 	stepRunRepo StepRunRepo
 	flow        flow.Flow
+	config      config.Executor
 }
 
-// NewExecutor creates an Executor wired to a specific flow definition.
-func NewExecutor(logger *zap.Logger, stepRunRepo StepRunRepo, f flow.Flow) *Executor {
+// NewService creates an Executor using the flow name from config to resolve
+// the flow definition from the registry.
+func NewService(logger *zap.Logger, k config.Executor, stepRunRepo StepRunRepo) *Executor {
+	f, _ := flow.Get(k.Flow)
 	return &Executor{
 		logger:      logger,
 		stepRunRepo: stepRunRepo,
 		flow:        f,
+		config:      k,
 	}
 }
 
@@ -52,7 +60,7 @@ func (e *Executor) StartRun(ctx context.Context, workerID int, runID string, inp
 		allSteps := e.flow.GetAllSteps()
 		e.logger.Info("Executing New Run", zap.String("runId", runID),
 			zap.Int("workerId", workerID), zap.Strings("steps", e.flow.StepNames()))
-		return e.ExecuteSteps(ctx, runID, workerID, input, allSteps)
+		return e.executeSteps(ctx, runID, workerID, input, allSteps)
 	}
 
 	pendingSteps, resumeInput := e.findPendingSteps(lastStep)
@@ -63,11 +71,11 @@ func (e *Executor) StartRun(ctx context.Context, workerID int, runID string, inp
 
 	e.logger.Info("Resuming Run", zap.String("runId", runID),
 		zap.Int("workerId", workerID), zap.Strings("pendingSteps", stepNames))
-	return e.ExecuteSteps(ctx, runID, workerID, resumeInput, pendingSteps)
+	return e.executeSteps(ctx, runID, workerID, resumeInput, pendingSteps)
 }
 
-// ExecuteSteps runs the given steps in order, chaining output → input between them.
-func (e *Executor) ExecuteSteps(ctx context.Context, runID string, workerID int, initialInput map[string]any, steps []flow.Step) error {
+// executeSteps runs the given steps in order, chaining output → input between them.
+func (e *Executor) executeSteps(ctx context.Context, runID string, workerID int, initialInput map[string]any, steps []flow.Step) error {
 	input := initialInput
 	for _, step := range steps {
 		if err := e.stepRunRepo.RecordStepStart(ctx, runID, step.Name, input); err != nil {
@@ -87,11 +95,12 @@ func (e *Executor) ExecuteSteps(ctx context.Context, runID string, workerID int,
 	return nil
 }
 
-// executeStepWithRetry attempts a step up to 3 times with 1-minute backoff between retries.
+// executeStepWithRetry attempts a step up to MaxRetries times with
+// exponential backoff and jitter between attempts.
 func (e *Executor) executeStepWithRetry(ctx context.Context, runID string, workerID int, input map[string]any, step flow.Step) (map[string]any, error) {
 	var lastError error
 
-	for attempt := 1; attempt <= 3; attempt++ {
+	for attempt := 1; attempt <= e.config.MaxRetries; attempt++ {
 		output, sec, err := e.executeStep(ctx, step, input)
 		duration := time.Duration(sec) * time.Second
 
@@ -105,11 +114,19 @@ func (e *Executor) executeStepWithRetry(ctx context.Context, runID string, worke
 			return output, nil
 		}
 
-		e.logger.Warn(fmt.Sprintf("Step [%s] Failed, Retrying", step.Name),
-			zap.Int("workerId", workerID), zap.Int("attempt", attempt), zap.Error(err))
-
-		time.Sleep(1 * time.Minute)
 		lastError = err
+
+		if attempt < e.config.MaxRetries {
+			backoff := e.calculateBackoff(attempt)
+			e.logger.Warn(fmt.Sprintf("Step [%s] Failed, Retrying in %s", step.Name, backoff),
+				zap.Int("workerId", workerID), zap.Int("attempt", attempt), zap.Error(err))
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
 	}
 
 	e.logger.Error(fmt.Sprintf("Max Retries Reached, Step [%s] Failed", step.Name),
@@ -119,6 +136,35 @@ func (e *Executor) executeStepWithRetry(ctx context.Context, runID string, worke
 		return nil, fmt.Errorf("step logging failed (failure): %w", logErr)
 	}
 	return nil, lastError
+}
+
+// calculateBackoff computes the wait duration for a given retry attempt using
+// exponential backoff capped at MaxBackoff, with random jitter applied.
+//
+// Example with defaults (initial=30s, factor=2, jitter=0.2):
+//
+//	attempt 1 → 30s  ± 20%
+//	attempt 2 → 60s  ± 20%
+//	attempt 3 → 120s ± 20%
+func (e *Executor) calculateBackoff(attempt int) time.Duration {
+	initialBackoff := float64(e.config.InitialBackoff) * float64(time.Second)
+	base := initialBackoff * math.Pow(e.config.BackoffFactor, float64(attempt-1))
+
+	maxBackoff := float64(e.config.MaxBackoff) * float64(time.Second)
+	if base > maxBackoff {
+		base = maxBackoff
+	}
+
+	// Apply jitter: shift by a random amount within ±(jitterFraction * base)
+	jitterRange := base * e.config.JitterFraction
+	jitter := (rand.Float64()*2 - 1) * jitterRange
+	base += jitter
+
+	if base < 0 {
+		base = 0
+	}
+
+	return time.Duration(base)
 }
 
 // executeStep runs cleanup (if defined) followed by execution, tracking elapsed time.

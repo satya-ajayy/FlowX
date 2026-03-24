@@ -15,7 +15,6 @@ var Dummy = Flow{
 			Name:        "validate_input",
 			Description: "Validates the incoming input payload",
 			Execute: func(ctx context.Context, input map[string]any) (map[string]any, error) {
-				fmt.Println("[validate_input] Validating input...")
 				time.Sleep(2 * time.Second)
 
 				name, ok := input["name"]
@@ -33,7 +32,6 @@ var Dummy = Flow{
 			Name:        "process_data",
 			Description: "Processes the validated data",
 			Execute: func(ctx context.Context, input map[string]any) (map[string]any, error) {
-				fmt.Println("[process_data] Processing data...")
 				time.Sleep(3 * time.Second)
 
 				return map[string]any{
@@ -47,7 +45,6 @@ var Dummy = Flow{
 			Name:        "send_notification",
 			Description: "Sends a completion notification",
 			Execute: func(ctx context.Context, input map[string]any) (map[string]any, error) {
-				fmt.Println("[send_notification] Sending notification...")
 				time.Sleep(1 * time.Second)
 
 				fmt.Printf("[send_notification] Notification sent for: %v\n", input["name"])

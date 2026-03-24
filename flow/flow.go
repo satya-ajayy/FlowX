@@ -1,6 +1,9 @@
 package flow
 
-import "context"
+import (
+	// Go Internal Packages
+	"context"
+)
 
 // Step represents a single unit of work within a flow.
 // Each step has a name, an optional cleanup phase, and an execution phase.
