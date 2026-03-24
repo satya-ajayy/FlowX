@@ -16,6 +16,12 @@ func SecondsSince(start time.Time) int {
 	return int(time.Since(start).Seconds())
 }
 
+// SleepOneSecond sleeps for 1 second.
 func SleepOneSecond() {
 	time.Sleep(1 * time.Second)
+}
+
+// Sleep100ms sleeps for 100 milliseconds.
+func Sleep100MS() {
+	time.Sleep(100 * time.Millisecond)
 }

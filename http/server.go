@@ -18,18 +18,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// Server struct follows the alphabet order
+// Server is the HTTP server that wires middleware, routes, and handlers.
 type Server struct {
 	close  func()
 	prefix string
 	logger *zap.Logger
 	health *handlers.HealthCheckHandler
+	run    *handlers.RunHandler
 }
 
+// NewServer creates a Server with all handler dependencies.
 func NewServer(
 	logger *zap.Logger,
 	prefix string,
 	health *handlers.HealthCheckHandler,
+	run *handlers.RunHandler,
 	close func(),
 ) *Server {
 	return &Server{
@@ -37,9 +40,11 @@ func NewServer(
 		logger: logger,
 		prefix: prefix,
 		health: health,
+		run:    run,
 	}
 }
 
+// Listen starts the HTTP server and blocks until shutdown.
 func (s *Server) Listen(ctx context.Context, addr string) error {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -50,6 +55,7 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 	r.Route(s.prefix, func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
 			r.Get("/health", s.ToHTTPHandlerFunc(s.health.HealthCheck))
+			r.Post("/runs", s.ToHTTPHandlerFunc(s.run.Create))
 		})
 	})
 
@@ -77,7 +83,7 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 }
 
 // ToHTTPHandlerFunc converts a handler function to an http.HandlerFunc.
-// This wrapper function is used to handle errors and respond to the client
+// This wrapper handles error classification and JSON response writing.
 func (s *Server) ToHTTPHandlerFunc(handler func(w http.ResponseWriter, r *http.Request) (any, int, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		response, status, err := handler(w, r)

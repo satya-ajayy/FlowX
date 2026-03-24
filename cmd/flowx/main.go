@@ -10,14 +10,14 @@ import (
 
 	// Local Packages
 	config "flowx/config"
+	"flowx/flow"
 	http "flowx/http"
 	handlers "flowx/http/handlers"
-	notifications "flowx/notifications"
 	mongodb "flowx/repositories/mongodb"
 	health "flowx/services/health"
-	processor "flowx/services/processor"
-	queue "flowx/services/queue"
-	workflow "flowx/services/workflow"
+	"flowx/services/executor"
+	runsvc "flowx/services/run"
+	"flowx/utils/slack"
 	helpers "flowx/utils/helpers"
 
 	// External Packages
@@ -31,55 +31,47 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// InitializeServer sets up an HTTP server with defined handlers. Repositories are initialized,
-// create the services, and subsequently construct handlers for the services
+// InitializeServer sets up the HTTP server with all dependencies wired together:
+// MongoDB → Repositories → Services → Handlers → Server
 func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) (*http.Server, error) {
-	// Connect to mongodb
 	mongoClient, err := mongodb.Connect(ctx, k.Mongo.URI)
 	if err != nil {
 		return nil, err
 	}
 
-	// Alert Service
-	alerter := notifications.NewAlerter(ctx, k)
+	// Initialize Slack Alerter
+	slack := slack.NewSender(k.Slack, k.IsProdMode)
 
 	// Repositories
-	workflowRepo := mongodb.NewWorkflowRepository(mongoClient)
-	tasklogRepo := mongodb.NewTaskLogRepository(mongoClient)
+	runRepo := mongodb.NewRunRepository(mongoClient)
+	stepRunRepo := mongodb.NewStepRunRepository(mongoClient)
 
 	// Services
 	healthSvc := health.NewService(logger, mongoClient)
-	workflowSvc := workflow.NewWorkflowService(logger)
+	exec := executor.NewExecutor(logger, stepRunRepo, flow.Dummy)
+	runSvc := runsvc.NewRunService(logger, k.Queue, runRepo, exec, slack)
 
-	// Workflow To Run
-	workflow := workflowSvc.GetEmptyWorkflow()
-
-	// Processor & Queue
-	processor := processor.NewProcessor(logger, tasklogRepo, workflow)
-	queue := queue.NewQueueService(logger, k.Queue, workflowRepo, processor, alerter)
-
-	// Start Queue Service (This will start the workers and poll for workflows)
-	if err := queue.Start(ctx); err != nil {
-		logger.Error("Failed To Start Queue Service!", zap.Error(err))
+	// Start the run service (spawns workers and re-enqueues incomplete runs)
+	if err := runSvc.Start(ctx); err != nil {
+		logger.Error("Failed To Start Run Service", zap.Error(err))
 		return nil, err
 	}
 
 	// Handlers
 	healthHandler := handlers.NewHealthCheckHandler(healthSvc)
+	runHandler := handlers.NewRunHandler(runSvc)
 
-	// Close Callback
 	closeCallback := func() {
 		_ = mongoClient.Disconnect(ctx)
-		logger.Info("Server Stopped Successfully!")
+		logger.Info("Server Stopped Successfully")
 	}
 
-	// Server
-	server := http.NewServer(logger, k.Prefix, healthHandler, closeCallback)
+	server := http.NewServer(logger, k.Prefix, healthHandler, runHandler, closeCallback)
 	return server, nil
 }
 
 // LoadConfig loads the default configuration and overrides it with the config file
-// specified by the path defined in the config flag
+// specified by the --config flag.
 func LoadConfig() *koanf.Koanf {
 	configPath := kingpin.Flag("config", "Path To The Application Config File").
 		Short('c').Default("config.yml").String()
@@ -127,10 +119,10 @@ func main() {
 	// Validate Config
 	if err := appKonf.Validate(); err != nil {
 		helpers.LogValidationErrors(err)
-		log.Fatalf("Invalid Configuration!")
+		log.Fatalf("Invalid Configuration")
 	}
 
-	// Print Config in Development Mode
+	// Print Config in Dev Mode
 	if !appKonf.IsProdMode {
 		k.Print()
 	}
@@ -146,10 +138,10 @@ func main() {
 
 	srv, err := InitializeServer(ctx, appKonf, logger)
 	if err != nil {
-		logger.Fatal("Cannot Initialize Server!", zap.Error(err))
+		logger.Fatal("Cannot Initialize Server", zap.Error(err))
 	}
 
 	if err = srv.Listen(ctx, appKonf.Listen); err != nil {
-		logger.Fatal("Cannot Listen On Port!", zap.Error(err))
+		logger.Fatal("Cannot Listen On Port", zap.Error(err))
 	}
 }
