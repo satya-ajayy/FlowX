@@ -37,13 +37,12 @@ type Executor struct {
 
 // NewService creates an Executor using the flow name from config to resolve
 // the flow definition from the registry.
-func NewService(logger *zap.Logger, k config.Executor, stepRunRepo StepRunRepo) *Executor {
-	f, _ := flow.Get(k.Flow)
+func NewService(logger *zap.Logger, config config.Executor, stepRunRepo StepRunRepo) *Executor {
 	return &Executor{
 		logger:      logger,
 		stepRunRepo: stepRunRepo,
-		flow:        f,
-		config:      k,
+		flow:        flow.Get(config.Flow),
+		config:      config,
 	}
 }
 

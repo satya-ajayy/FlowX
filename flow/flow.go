@@ -60,3 +60,25 @@ func (f *Flow) GetPendingSteps(lastStep string, lastSucceeded bool) []Step {
 
 	return remaining
 }
+
+// registry maps config-friendly flow names to their code-defined definitions.
+// Add new flows here when they are created.
+var registry = map[string]Flow{
+	"default": DefaultFlow,
+}
+
+// Exists checks if a flow with the given name is registered.
+func Exists(name string) bool {
+	_, ok := registry[name]
+	return ok
+}
+
+// Get returns the flow matching the given name.
+// If not Exists return Dummy flow
+func Get(name string) Flow {
+	f, ok := registry[name]
+	if !ok {
+		return DefaultFlow
+	}
+	return f
+}

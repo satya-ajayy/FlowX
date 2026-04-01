@@ -31,7 +31,7 @@ queue:
   workers: 5
 
 executor:
-  flow: "dummy_flow"
+  flow: "default"
   max_retries: 3
   initial_backoff: 30
   max_backoff: 300

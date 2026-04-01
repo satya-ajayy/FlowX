@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-// Dummy is a sample flow for testing the execution pipeline end-to-end.
+// DefaultFlow is a sample flow for testing the execution pipeline end-to-end.
 // It simulates three sequential steps: validation, processing, and notification.
-var Dummy = Flow{
-	Name: "dummy_flow",
+var DefaultFlow = Flow{
+	Name: "default_flow",
 	Steps: []Step{
 		{
 			Name:        "validate_input",
