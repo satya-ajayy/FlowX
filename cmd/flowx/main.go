@@ -39,7 +39,7 @@ func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) 
 	}
 
 	// Initialize Slack Alerter
-	slack := slack.NewSender(k.Slack, k.IsProdMode)
+	slackAlerter := slack.NewSender(k.Slack, k.IsProdMode)
 
 	// Repositories
 	runRepo := mongodb.NewRunRepository(mongoClient)
@@ -48,10 +48,10 @@ func InitializeServer(ctx context.Context, k config.Config, logger *zap.Logger) 
 	// Services
 	healthSVC := health.NewService(logger, mongoClient)
 	executorSVC := executor.NewService(logger, k.Executor, stepRunRepo)
-	runSvc := runsvc.NewService(logger, k.Queue, runRepo, executorSVC, slack)
+	runSvc := runsvc.NewService(logger, k.Queue, runRepo, executorSVC, slackAlerter)
 
 	// Start the run service (spawns workers and re-enqueues incomplete runs)
-	if err := runSvc.Start(ctx); err != nil {
+	if err = runSvc.Start(ctx); err != nil {
 		logger.Error("Failed To Start Run Service", zap.Error(err))
 		return nil, err
 	}
